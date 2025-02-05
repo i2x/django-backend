@@ -1,28 +1,37 @@
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.views import APIView
 from django.http import JsonResponse
+from django.views import View
+from django.db.models import Q
+from api.models import Note
 
-
-# ✅ Search Files API (No authentication required)
-class SearchFilesView(APIView):
-    permission_classes = [IsAuthenticated]  # ✅ Requires login
-
+class SearchNotesView(View):
     def get(self, request):
-        file_name = request.GET.get('name', '').strip().lower()
+        query = request.GET.get("q", "").strip()
+        field = request.GET.get("field", "name")  # ใช้ "name" เป็นค่าเริ่มต้น
+        if not query:
+            return JsonResponse({"error": "Missing query parameter 'q'"}, status=400)
 
-        # Mock file data (Replace this with database queries in the future)
-        mock_files = [
-            {"id": 1, "name": "project_report.pdf"},
-            {"id": 2, "name": "design_mockup.png"},
-            {"id": 3, "name": "meeting_notes.txt"},
-            {"id": 4, "name": "budget_plan.xlsx"},
-            {"id": 5, "name": "presentation.pptx"},
+        # ✅ อนุญาตให้ค้นหาเฉพาะฟิลด์ที่กำหนดใน whitelist เพื่อป้องกัน SQL Injection
+        allowed_fields = ["name", "tags", "user__username", "course__name"]
+        if field not in allowed_fields:
+            return JsonResponse({"error": f"Invalid search field '{field}'"}, status=400)
 
+        # ✅ ค้นหาตามฟิลด์ที่ผู้ใช้กำหนด
+        filter_kwargs = {f"{field}__icontains": query}
+        notes = Note.objects.filter(**filter_kwargs)
 
-
+        notes_data = [
+            {
+                "id": note.id,
+                "name": note.name,
+                "file_url": note.file_url,
+                "thumbnail_url": note.thumbnail_url,
+                "tags": note.tags,
+                "user": note.user.username,
+                "course": note.course.name,
+                "created_at": note.created_at,
+                "updated_at": note.updated_at
+            }
+            for note in notes
         ]
 
-        # If file_name exists, filter results
-        filtered_files = [file for file in mock_files if file_name in file["name"].lower()] if file_name else mock_files
-
-        return JsonResponse(filtered_files, safe=False)
+        return JsonResponse({"results": notes_data})

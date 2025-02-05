@@ -26,7 +26,8 @@ def get_user_from_google_token(token):
     return response.json()
 
 
-# ✅ Google Login API with Profile Picture
+
+
 class GoogleLoginView(APIView):
     def post(self, request):
         token = request.data.get('token')
@@ -35,15 +36,19 @@ class GoogleLoginView(APIView):
         if not data:
             return Response({'error': 'Invalid Google token'}, status=400)
 
+        email = data.get('email')  # ✅ Get the real email
         name = data.get('name')  # ✅ Get the user's name
         picture = data.get('picture')  # ✅ Get the profile picture URL
 
-        if not name:
-            return Response({'error': 'Name not found in Google response'}, status=400)
+        if not email:
+            return Response({'error': 'Email not found in Google response'}, status=400)
+
+        # Ensure username is unique and meaningful
+        username = email.split('@')[0]
 
         user, created = User.objects.get_or_create(
-            username=name,
-            defaults={'email': f"{name.replace(' ', '').lower()}@example.com"}  # Use a dummy email
+            email=email,
+            defaults={'username': username}  # Use the part before '@' for username
         )
 
         if created:
@@ -57,7 +62,8 @@ class GoogleLoginView(APIView):
             'access': tokens["access"],
             'user': {
                 'id': user.id,
-                'username': user.username,  # ✅ Use name instead of email
+                'username': user.username,
+                'email': user.email,  # ✅ Return the real email
                 'role': user.role,
                 'picture': picture  # ✅ Return the Google profile picture
             }
