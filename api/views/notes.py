@@ -1,68 +1,21 @@
-from django.http import JsonResponse
-from django.views import View
 from django.shortcuts import get_object_or_404
-from django.views.decorators.csrf import csrf_exempt
-from django.utils.decorators import method_decorator
-import json
-from ..models import Note, Course
-from django.contrib.auth.decorators import login_required
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.permissions import IsAuthenticated
+from rest_framework import status
+from api.models import Note, Course
+from rest_framework.permissions import AllowAny
 
 
-# 🎯 GET /api/notes/ → Fetch all notes
-# 🎯 POST /api/notes/ → Create a new note
-@method_decorator(csrf_exempt, name="dispatch")
-class NoteListCreateView(View):
-    def get(self, request):
-        """ Fetch all notes, ordered by creation date. """
-        notes = Note.objects.all().order_by("-created_at")
-        notes_data = [
-            {
-                "id": note.id,
-                "name": note.name,
-                "file_url": note.file_url,
-                "course_id": note.course.id,
-                "course_name": note.course.name,
-                "user": note.user.username,
-                "tags": note.tags,
-                "created_at": note.created_at,
-                "updated_at": note.updated_at,
-            }
-            for note in notes
-        ]
-        return JsonResponse({"notes": notes_data})
+class NoteBaseView(APIView):
+    """ Base View with authentication and common helper methods """
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
 
-    def post(self, request):
-        """ Create a new note. Requires JSON body with name, file_url, course_id, and optional tags. """
-        try:
-            data = json.loads(request.body)
-            course = get_object_or_404(Course, id=data["course_id"])
-            user = request.user  # Requires authentication
-
-            new_note = Note.objects.create(
-                name=data["name"],
-                file_url=data["file_url"],
-                course=course,
-                user=user,
-                tags=data.get("tags", ""),
-            )
-
-            return JsonResponse(
-                {"note": {"id": new_note.id, "name": new_note.name, "file_url": new_note.file_url}},
-                status=201,
-            )
-        except Exception as e:
-            return JsonResponse({"error": str(e)}, status=400)
-
-
-# 🎯 GET /api/notes/<id>/ → Get a single note
-# 🎯 PUT /api/notes/<id>/ → Update a note
-# 🎯 DELETE /api/notes/<id>/ → Delete a note
-@method_decorator(csrf_exempt, name="dispatch")
-class NoteDetailView(View):
-    def get(self, request, pk):
-        """ Retrieve a single note by its ID. """
-        note = get_object_or_404(Note, id=pk)
-        note_data = {
+    def _serialize_note(self, note):
+        """ Helper method to serialize note data """
+        return {
             "id": note.id,
             "name": note.name,
             "file_url": note.file_url,
@@ -73,62 +26,90 @@ class NoteDetailView(View):
             "created_at": note.created_at,
             "updated_at": note.updated_at,
         }
-        return JsonResponse(note_data)
+
+    def _get_note_or_403(self, request, pk):
+        """ Helper method to get a note and check ownership """
+        note = get_object_or_404(Note, id=pk)
+        if note.user != request.user:
+            return Response({"error": "You do not have permission for this note."}, status=status.HTTP_403_FORBIDDEN)
+        return note
+
+
+class NoteListCreateView(NoteBaseView):
+    """ Handles listing and creating notes """
+
+    def get(self, request):
+        """ Fetch only the notes of the logged-in user """
+        notes = Note.objects.filter(user=request.user).order_by("-created_at")
+        return Response({"notes": [self._serialize_note(note) for note in notes]}, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        """ Create a new note (Only for logged-in users) """
+        data = request.data
+        course = get_object_or_404(Course, id=data["course_id"])
+
+        new_note = Note.objects.create(
+            name=data["name"],
+            file_url=data["file_url"],
+            course=course,
+            user=request.user,
+            tags=data.get("tags", ""),
+        )
+
+        return Response({"note": self._serialize_note(new_note)}, status=status.HTTP_201_CREATED)
+
+
+class NoteDetailView(NoteBaseView):
+    """ Handles retrieving, updating, and deleting a note """
+
+    def get(self, request, pk):
+        """ Retrieve a single note (Only owner can view) """
+        note = self._get_note_or_403(request, pk)
+        return Response(self._serialize_note(note))
 
     def put(self, request, pk):
-        """ Update an existing note. Requires JSON body with updated fields. """
-        try:
-            data = json.loads(request.body)
-            note = get_object_or_404(Note, id=pk)
-            note.name = data.get("name", note.name)
-            note.file_url = data.get("file_url", note.file_url)
-            note.tags = data.get("tags", note.tags)
+        """ Update a note (Only owner can update) """
+        note = self._get_note_or_403(request, pk)
+        data = request.data
 
-            if "course_id" in data:
-                note.course = get_object_or_404(Course, id=data["course_id"])
+        # Update note fields
+        note.name = data.get("name", note.name)
+        note.file_url = data.get("file_url", note.file_url)
+        note.tags = data.get("tags", note.tags)
 
-            note.save()
-            return JsonResponse({"message": "Note updated successfully!"})
-        except Exception as e:
-            return JsonResponse({"error": str(e)}, status=400)
+        if "course_id" in data:
+            note.course = get_object_or_404(Course, id=data["course_id"])
+
+        note.save()
+        return Response({"message": "Note updated successfully!", "note": self._serialize_note(note)}, status=status.HTTP_200_OK)
 
     def delete(self, request, pk):
-        """ Delete a note by its ID. """
-        note = get_object_or_404(Note, id=pk)
+        """ Delete a note (Only owner can delete) """
+        note = self._get_note_or_403(request, pk)
         note.delete()
-        return JsonResponse({"message": "Note deleted successfully!"}, status=200)
+        return Response({"message": "Note deleted successfully!"}, status=status.HTTP_204_NO_CONTENT)
 
 
-# 🎯 GET /api/notes/search/?q=example&field=name → Search notes
-class NoteSearchView(View):
+class NoteSearchView(NoteBaseView):
+    """ Handles public searching of notes (All users can search) """
+    
+    permission_classes = [AllowAny]  # 🔥 Make search public
+
     def get(self, request):
-        """ Search notes by name, tags, or course. Requires query parameter 'q' and optional 'field'. """
-        query = request.GET.get("q", "")
-        field = request.GET.get("field", "name")  # Default: Search by name
+        """ Public search for notes across all users """
+        query = request.GET.get("q", "").strip()
+        field = request.GET.get("field", "name")
 
         if not query:
-            return JsonResponse({"error": "Missing query parameter 'q'"}, status=400)
+            return Response({"error": "Missing query parameter 'q'"}, status=status.HTTP_400_BAD_REQUEST)
 
-        allowed_fields = ["name", "tags", "course__name"]
+        # ✅ Only allow searching in these fields to prevent SQL injection
+        allowed_fields = ["name", "tags", "course__name","user__username"]
         if field not in allowed_fields:
-            return JsonResponse({"error": f"Invalid search field '{field}'"}, status=400)
+            return Response({"error": f"Invalid search field '{field}'"}, status=status.HTTP_400_BAD_REQUEST)
 
+        # ✅ Perform search across all users' notes (removed user filter)
         filter_kwargs = {f"{field}__icontains": query}
         notes = Note.objects.filter(**filter_kwargs)
 
-        notes_data = [
-            {
-                "id": note.id,
-                "name": note.name,
-                "file_url": note.file_url,
-                "course_id": note.course.id,
-                "course_name": note.course.name,
-                "user": note.user.username,
-                "tags": note.tags,
-                "created_at": note.created_at,
-                "updated_at": note.updated_at,
-            }
-            for note in notes
-        ]
-
-        return JsonResponse({"results": notes_data})
+        return Response({"results": [self._serialize_note(note) for note in notes]}, status=status.HTTP_200_OK)

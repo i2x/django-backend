@@ -1,7 +1,6 @@
 from django.urls import path
 from .views import (
     GoogleLoginView,
-    SearchNotesView,
     CurriculumCoursesView,
     CourseListView,
     NoteListCreateView,
@@ -14,7 +13,6 @@ from .views import (
 
 urlpatterns = [
     path('google-login/', GoogleLoginView.as_view(), name='google-login'),
-    path('notes/search/', SearchNotesView.as_view(), name='search-notes'),
     path('curriculum/', CurriculumCoursesView.as_view(), name='curriculum-latest'),  # Get latest curriculum courses
 
 

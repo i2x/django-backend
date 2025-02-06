@@ -23,8 +23,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
 
-    'taggit',  # เพิ่ม taggit
-
+    'taggit',  # Tagging system
 
     # Third-party apps
     'rest_framework',
@@ -36,9 +35,9 @@ INSTALLED_APPS = [
     'api',  # User management app
 ]
 
-# Middleware
+# Middleware (CORS Middleware MUST be first)
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',  # Enable CORS
+    'corsheaders.middleware.CorsMiddleware',  # ✅ Must be first for proper CORS handling
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -55,20 +54,35 @@ REST_FRAMEWORK = {
     ),
 }
 
-
 # JWT Authentication settings
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(days=365 * 10),  # 10 years (effectively never expires)
+    "ACCESS_TOKEN_LIFETIME": timedelta(days=365 * 10),  # 10 years
     "REFRESH_TOKEN_LIFETIME": timedelta(days=365 * 50),  # 50 years
     "ROTATE_REFRESH_TOKENS": False,  # No automatic refresh
     "BLACKLIST_AFTER_ROTATION": False,  # No blacklisting
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
+# 🔥 CORS CONFIGURATION 🔥
+CORS_ALLOW_ALL_ORIGINS = True  # ✅ Allow all origins (for debugging; restrict in production)
+CORS_ALLOW_CREDENTIALS = True  # ✅ Allow credentials for authentication
 
-# Cross-Origin Resource Sharing (CORS) settings
-CORS_ALLOW_ALL_ORIGINS = True  # Allow all domains (Use specific frontend domain in production)
-CORS_ALLOW_CREDENTIALS = True
+# If you want to restrict CORS to only certain frontend domains:
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",  # React frontend (if using React)
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",  # Vite frontend (if using Vue.js or React with Vite)
+    "http://127.0.0.1:5173",
+]
+
+CORS_ALLOW_HEADERS = [
+    'authorization',
+    'content-type',
+    'accept',
+    'origin',
+    'x-csrftoken',
+    'x-requested-with',
+]
 
 # Authentication backends
 AUTHENTICATION_BACKENDS = (

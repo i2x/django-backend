@@ -1,11 +1,13 @@
-from django.http import JsonResponse
-from django.views import View
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
 from api.models import Course
 
-# 🎯 GET /api/courses/ → Fetch all courses
-class CourseListView(View):
+
+class CourseListView(APIView):
+
     def get(self, request):
         """ Fetch all courses with ID and name """
         courses = Course.objects.all()
         course_data = [{"id": course.id, "name": course.name} for course in courses]
-        return JsonResponse({"courses": course_data})
+        return Response({"courses": course_data}, status=status.HTTP_200_OK)
